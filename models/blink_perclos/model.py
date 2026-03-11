@@ -1,8 +1,6 @@
 import os
 
-import cv2
 import numpy as np
-import pandas as pd
 import joblib
 from collections import deque
 
@@ -80,18 +78,21 @@ class ModelEyeGaze:
     # Utility Functions
     # ------------------------------------------------
 
-    def _to_pixel(self, lm, img_w, img_h):
-        return int(lm.x * img_w), int(lm.y * img_h)
-
     def _extract_eye_features(self, landmarks, img_w, img_h, eye_idx):
-        left_x, left_y = self._to_pixel(landmarks[eye_idx["LEFT"]], img_w, img_h)
-        right_x, right_y = self._to_pixel(landmarks[eye_idx["RIGHT"]], img_w, img_h)
-        top_x, top_y = self._to_pixel(landmarks[eye_idx["TOP"]], img_w, img_h)
-        bottom_x, bottom_y = self._to_pixel(landmarks[eye_idx["BOTTOM"]], img_w, img_h)
-        iris_x, iris_y = self._to_pixel(landmarks[eye_idx["IRIS"]], img_w, img_h)
+        lm = landmarks
+        left_x = lm[eye_idx["LEFT"]].x * img_w
+        left_y = lm[eye_idx["LEFT"]].y * img_h
+        right_x = lm[eye_idx["RIGHT"]].x * img_w
+        right_y = lm[eye_idx["RIGHT"]].y * img_h
+        top_x = lm[eye_idx["TOP"]].x * img_w
+        top_y = lm[eye_idx["TOP"]].y * img_h
+        bottom_x = lm[eye_idx["BOTTOM"]].x * img_w
+        bottom_y = lm[eye_idx["BOTTOM"]].y * img_h
+        iris_x = lm[eye_idx["IRIS"]].x * img_w
+        iris_y = lm[eye_idx["IRIS"]].y * img_h
 
-        width = np.linalg.norm([right_x - left_x, right_y - left_y])
-        height = np.linalg.norm([bottom_x - top_x, bottom_y - top_y])
+        width = np.hypot(right_x - left_x, right_y - left_y)
+        height = np.hypot(bottom_x - top_x, bottom_y - top_y)
 
         if width == 0 or height == 0:
             return None
@@ -99,7 +100,7 @@ class ModelEyeGaze:
         h_ratio = np.clip((iris_x - left_x) / width, 0, 1)
         v_ratio = np.clip((iris_y - top_y) / height, 0, 1)
 
-        return h_ratio, v_ratio, (iris_x, iris_y)
+        return h_ratio, v_ratio
 
     def _smooth(self, current):
         if self.prev_features is None:
@@ -123,55 +124,29 @@ class ModelEyeGaze:
     def process(self, frame, landmarks, img_w, img_h):
 
         if self.classifier is None or self.scaler is None:
-            # Model not available; leave frame unchanged.
             return frame
 
-        # Extract both eyes
-        right = self._extract_eye_features(
-            landmarks, img_w, img_h, self.RIGHT_EYE_IDX
-        )
-        left = self._extract_eye_features(
-            landmarks, img_w, img_h, self.LEFT_EYE_IDX
-        )
+        right = self._extract_eye_features(landmarks, img_w, img_h, self.RIGHT_EYE_IDX)
+        left = self._extract_eye_features(landmarks, img_w, img_h, self.LEFT_EYE_IDX)
 
         if right is None or left is None:
             return frame
 
-        r_h, r_v, r_iris = right
-        l_h, l_v, l_iris = left
+        r_h, r_v = right
+        l_h, l_v = left
 
-        # Draw iris
-        cv2.circle(frame, r_iris, 3, (0, 255, 0), -1)
-        cv2.circle(frame, l_iris, 3, (0, 255, 0), -1)
-
-        # Feature engineering
         avg_h = (r_h + l_h) / 2
         avg_v = (r_v + l_v) / 2
-        diff_h = r_h - l_h
-        diff_v = r_v - l_v
 
         feature_array = np.array([
             r_h, r_v, l_h, l_v,
-            avg_h, avg_v, diff_h, diff_v
+            avg_h, avg_v, r_h - l_h, r_v - l_v,
         ])
 
-        # Smooth features
         feature_array = self._smooth(feature_array)
 
-        # Proper DataFrame with correct column names
-        features_df = pd.DataFrame(
-            [feature_array],
-            columns=self.FEATURE_COLUMNS
-        )
-
-        # Scale
-        scaled = self.scaler.transform(features_df)
-
-        # Predict
+        scaled = self.scaler.transform(feature_array.reshape(1, -1))
         raw_prediction = self.classifier.predict(scaled)[0]
+        self._stabilize_prediction(raw_prediction)
 
-        # Stabilize
-        prediction = self._stabilize_prediction(raw_prediction)
-
-        # HUD drawn by app.utils.overlay
         return frame
