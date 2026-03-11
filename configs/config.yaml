@@ -1,3 +1,0 @@
-mongodb:
-  url: "mongodb+srv://corazortechnology:A0Qfk2PbjOMKN32Z@cluster0.drxzj5r.mongodb.net/"
-  database: "driver_monitoring"
