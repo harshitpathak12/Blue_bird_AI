@@ -1,0 +1,33 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Large models
+*.pt
+*.pth
+*.onnx
+*.task
+
+# Dataset
+data/
+datasets/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+.yaml
+# VSCode
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# temp
+tmp/
