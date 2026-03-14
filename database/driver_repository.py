@@ -35,10 +35,11 @@ def create_driver(
     name: str,
     age: int | None = None,
     face_embedding: list | None = None,
+    face_embedding_3d: list | None = None,
     face_image_path: str | None = None,
 ):
     """
-    Create driver record: driver_id, name, age, face_embedding, face_image_path, created_at.
+    Create driver record: driver_id, name, age, face_embedding (2D), face_embedding_3d, face_image_path, created_at.
 
     If driver_id is None, a unique 9-character alphanumeric ID is generated.
     """
@@ -50,6 +51,7 @@ def create_driver(
         "name": name,
         "age": age,
         "face_embedding": face_embedding,
+        "face_embedding_3d": face_embedding_3d,
         "face_image_path": face_image_path,
         "created_at": datetime.now(timezone.utc),
     }

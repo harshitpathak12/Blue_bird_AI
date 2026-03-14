@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.fusion import FusionEngine, ModelOutputs
 from app.services.driver_identity import match_embedding_to_driver
+from app.services.face_embedding_3d import build_3d_embedding
 from database.session_repository import create_session, end_session
 from database.alert_repository import insert_alert
 
@@ -68,13 +69,21 @@ def _process_frame(data: bytes, run_models: bool, frame_count: int,
             fatigue_model.process(frame, None, None, None)
             drowsiness_model.process(frame, None, None, None)
 
-        if (_arcface_model is not None
-                and frame_count % 20 == 0
-                and (driver_id is None or frame_count % 20 == 0)):
-            try:
-                emb = _arcface_model.get_embedding_from_frame(frame)
-                if emb is not None:
-                    driver, _ = match_embedding_to_driver(emb, driver_id=driver_id)
+        if frame_count % 20 == 0:
+            emb_3d = build_3d_embedding(landmarks) if has_landmarks else None
+            emb_2d = None
+            if _arcface_model is not None:
+                try:
+                    emb_2d = _arcface_model.get_embedding_from_frame(frame)
+                except Exception as e:
+                    print(f"[stream] ArcFace embedding error: {e}")
+            if emb_3d is not None or emb_2d is not None:
+                try:
+                    driver, _ = match_embedding_to_driver(
+                        embedding_2d=emb_2d,
+                        embedding_3d=emb_3d,
+                        driver_id=driver_id,
+                    )
                     if driver is not None:
                         recognition_result["driver_id"] = driver["driver_id"]
                         recognition_result["display"] = (
@@ -84,8 +93,8 @@ def _process_frame(data: bytes, run_models: bool, frame_count: int,
                     else:
                         recognition_result["driver_id"] = None
                         recognition_result["display"] = "Unknown"
-            except Exception as e:
-                print(f"[stream] face recognition error: {e}")
+                except Exception as e:
+                    print(f"[stream] face recognition error: {e}")
 
         fatigue_score = 1.0 if fatigue_model.fatigue_active else 0.0
         perclos = drowsiness_model.perclos
@@ -129,7 +138,7 @@ def _process_frame(data: bytes, run_models: bool, frame_count: int,
             "roll": round(headpose_model.last_roll, 2),
 
             "eye_prediction": eye_gaze_model.stable_prediction,
-            "driver_identity": recognized_display if _arcface_model is not None else None,
+            "driver_identity": recognized_display,
         }
 
     ok, buf = cv2.imencode(
